@@ -3,9 +3,20 @@ package com.paintingcompetition.infrastructure.adapters.in.console;
 import com.paintingcompetition.domain.model.RolUsuario;
 import com.paintingcompetition.domain.model.Usuario;
 import com.paintingcompetition.domain.ports.out.MotorCriptograficoPort;
+import com.paintingcompetition.infrastructure.adapters.out.crypto.ModuloAnonimatoRSA;
 
+import java.math.BigInteger;
+import java.security.KeyPair;
+import java.security.interfaces.RSAPrivateCrtKey;
+import java.security.interfaces.RSAPrivateKey;
+import java.security.interfaces.RSAPublicKey;
 import java.util.Scanner;
 import java.util.UUID;
+import java.util.Base64;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Scanner;
 
 /**
  * Adaptador de Entrada (Driving Adapter) que implementa una interfaz de usuario
@@ -181,6 +192,7 @@ public class MenuPrincipalConsola {
             switch (op) {
                 case "1":
                     System.out.println("\n[Simulación]: Realizar firma ciega.");
+                    simulacionPresidente();
                     break;
                 case "2":
                     regresar = true;
@@ -188,6 +200,59 @@ public class MenuPrincipalConsola {
                 default:
                     System.out.println("\n[!] Opción no válida.");
             }
+        }
+    }
+
+    private void simulacionPresidente() {
+        try {
+            System.out.println("========== INICIANDO LA SIMULACION ==========");
+            ModuloAnonimatoRSA modulo = new ModuloAnonimatoRSA();
+
+            System.out.println("(SISTEMA) Generacion de llaves TSA con 3072 para presidente");
+            KeyPair llavesPresidente = modulo.generarParLlavesRSA();
+            RSAPublicKey llavePublica = (RSAPublicKey) llavesPresidente.getPublic();
+            RSAPrivateKey llavePrivada = (RSAPrivateKey) llavesPresidente.getPrivate();
+
+            int[] votosDejueces = { 2, 1, 3 };
+            byte[][] votoByte = new byte[3][];
+
+            for (int i = 0; i < votosDejueces.length; i++) {
+                int numerojuez = i + 1;
+                int voto = votosDejueces[i];
+                votoByte[i] = new byte[] { (byte) voto };
+
+                BigInteger factorCegado = modulo.generarFactorCegado(llavePublica);
+                byte[] votoCegado = modulo.cegarMensaje(votoByte[i], factorCegado, llavePublica);
+                byte[] firmaCegada = modulo.firmarCegadoRSA(votoCegado, llavePrivada);
+
+                byte[] firmaReal = modulo.descegarFirmaRSA(firmaCegada, factorCegado, llavePublica);
+                System.out.println("(SISTEMA) Exportando el archivo ");
+                String rutaArchivo = "firma_voto_juez_" + numerojuez + ".txt";
+                String firmaBase64 = Base64.getEncoder().encodeToString(firmaReal);
+                Files.writeString(Paths.get(rutaArchivo), firmaBase64);
+
+            }
+
+            System.out.println("===== Verificacion de archivos ===== ");
+            this.scanner.nextLine();
+            for (int i = 0; i < votosDejueces.length; i++) {
+                int numerojuez = i + 1;
+                String rutaArchivo = "firma_voto_juez_" + numerojuez + ".txt";
+                try {
+                    String firmaLeidaBase64 = Files.readString(Paths.get(rutaArchivo));
+                    byte[] firmaParaVerificar = Base64.getDecoder().decode(firmaLeidaBase64);
+                    boolean esValido = modulo.verificarFirmaRSA(votoByte[i], firmaParaVerificar, llavePublica);
+                    if (esValido)
+                        System.out.println("Firma del juez " + numerojuez + " valida");
+                    else
+                        System.out.println("Firma del juez " + numerojuez + "  NO valida");
+                } catch (Exception e) {
+                    System.out.println("Firma ilegible");
+                }
+            }
+
+        } catch (Exception e) {
+            System.out.println("Ocurrio un error en la simulacion ");
         }
     }
 }
